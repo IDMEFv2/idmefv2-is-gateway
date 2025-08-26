@@ -1,0 +1,99 @@
+services:
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.2
+    container_name: s4s.zookeeper
+    hostname: zookeeper
+    ports:
+      - "127.0.0.1:2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_SERVER_ID: 1
+      ZOOKEEPER_SERVERS: zookeeper:2888:3888
+    restart: on-failure
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.2
+    container_name: s4s.kafka
+    hostname: kafka
+    ports:
+      - "127.0.0.1:9092:9092"
+      - "127.0.0.1:29092:29092"
+      - "127.0.0.1:9999:9999"
+    restart: on-failure
+    volumes:
+      - ./logs:/var/lib/kafka/logs:Z
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://kafka:9092,DOCKER://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_BROKER_ID: 1
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_JMX_PORT: 9999
+      KAFKA_JMX_HOSTNAME: kafka
+      KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+      KAFKA_CONFLUENT_SUPPORT_METRICS_ENABLE: false
+    healthcheck:
+      test: [ "CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - zookeeper
+
+  # Kafka GUI like kafdrop but more user freindly 
+  kowl:
+    image: quay.io/cloudhut/kowl:master
+    container_name: s4s.kowl
+    restart: unless-stopped
+    ports:
+      - 8083:8080
+    environment:
+      KAFKA_BROKERS: "kafka:29092"
+    depends_on:
+      - kafka
+
+  rest-proxy:
+    image: confluentinc/cp-kafka-rest:7.9.0
+    container_name: s4s.rest-proxy
+    depends_on:
+      - kafka
+    ports:
+      - 127.0.0.1:8082:8082
+    hostname: rest-proxy
+    environment:
+      KAFKA_REST_HOST_NAME: rest-proxy
+      KAFKA_REST_BOOTSTRAP_SERVERS: 'kafka:29092'
+      KAFKA_REST_LISTENERS: "http://0.0.0.0:8082"
+    
+  is-gateway-rc:
+    image: s4s/is-gateway
+    container_name: s4s.is-gateway-rc
+    build: 
+      context: ./is-gateway/docker
+      dockerfile: Dockerfile
+    restart: "on-failure"
+    ports:
+       - 10081:10081
+    volumes:
+      - ./is-gateway/config/receiver.properties:/application.properties
+    depends_on:
+      - rest-proxy
+
+  # is-gateway-sd:
+  #   image: s4s/is-gateway
+  #   container_name: s4s.is-gateway-sd
+  #   build: 
+  #     context: ./docker
+  #     dockerfile: Dockerfile
+  #   restart: "on-failure"
+  #   ports:
+  #      - 10080:10080
+  #   volumes:
+  #     - ./is-gateway/config/sender.properties:/application.properties
+    
