@@ -1,0 +1,14 @@
+services:
+
+  is-gateway-sd:
+    image: s4s/is-gateway:v2
+    container_name: s4s.is-gateway-sd
+    build: 
+      context: ./docker
+      dockerfile: Dockerfile
+    restart: "on-failure"
+    ports:
+       - 10081:10081
+    volumes:
+      - ./is-gateway/config/sender.properties:/application.properties
+    
